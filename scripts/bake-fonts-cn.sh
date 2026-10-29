@@ -29,7 +29,9 @@ if [ ! -f "$src" ]; then
 fi
 
 echo "== 1. 编译字体烘焙器 =="
-"${HOST_CXX:-clang++}" -std=c++20 -O2 -w "$kit/tools/font-baker/bake_font.cpp" -o "$tmp/bake_font"
+# 编主仓库里那份（scripts/font-baker/bake_font.cpp），不是 submodule 里的原版 ——
+# 原版不认 "@字符集文件"，而这个改动不值得单独养一个 submodule fork。
+"${HOST_CXX:-clang++}" -std=c++20 -O2 -w "$root/scripts/font-baker/bake_font.cpp" -o "$tmp/bake_font"
 
 echo "== 2. 生成两套字符集 =="
 python3 "$root/scripts/gen-charset.py" "$root" "$tmp/charsets"

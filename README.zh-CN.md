@@ -72,22 +72,31 @@ apt-get install -y llvm-21-dev libllvmspirvlib-21-dev libclang-21-dev libclc-22-
 然后：
 
 ```bash
-# 1. 中文字体源（TrueType 可变字体，17.7 MB）
-mkdir -p .deps/fonts
-curl -L -o .deps/fonts/NotoSansSC-VF.ttf \
-  'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf'
-
-# 2. 烘字体（会用脚本里的 gen-charset.py 现扫源码生成字符集）
-scripts/bake-fonts-cn.sh
-
-# 3. 编（上游流程，压缩 RADV 那步最久）
+# 上游的流程，一步不少
 PS5_MESA_REVISION=$(git -C .deps/src/PS5_Mesa rev-parse HEAD) \
   bash .deps/src/PS5_Vulkan/tools/build-radv.sh release
 scripts/build-app.sh        # 产出 build/app-ps5/title/PPSA99575
 
-# 4. 打包
+# 打包
 scripts/release-app.sh
 ```
+
+**就这样，直接能出中文版** —— 中文字体已经烘好提交在 `ps5/app/assets/fonts/` 里（16.7 MB），
+`build-app.sh` 只是把它拷进 title 目录，不重新烘。
+
+只有下面两种情况才需要动字体：
+
+```bash
+# ① 改了译文，新加的字不在现有字符集里
+# ② 想换字号/换字体
+mkdir -p .deps/fonts
+curl -L -o .deps/fonts/NotoSansSC-VF.ttf \
+  'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf'
+scripts/bake-fonts-cn.sh     # 会先扫源码生成字符集，再烘三个字重
+```
+
+`bake-fonts-cn.sh` 用的是 `scripts/font-baker/bake_font.cpp`（本仓库自带的那份，
+支持 `@字符集文件` 参数），不依赖 submodule 里原版烘焙器。
 
 字体必须是 **TrueType 轮廓**（文件头 `00 01 00 00`）。OTF 是 CFF 轮廓（`OTTO`），
 `stb_truetype` 根本不认，烘出来是空的 —— 这个坑踩过。
