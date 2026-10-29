@@ -1,0 +1,19 @@
+# 一律 LF。在 Windows 上用 git clone 出来也不会变 CRLF，省得有人拿 WSL 直接编
+# /mnt/d 下的代码时撞上「#!/bin/sh\r: not found」「set -euo pipefail\r 报 invalid option」
+# 「.sha256 带 \r 校验永不过」这一整串坑。
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+*.csv text eol=lf
+*.md text eol=lf
+*.patch text eol=lf
+
+# 烘焙好的字体图集和各种产物是二进制，别让 git 去 diff/合并
+*.huifont binary
+*.gguf binary
+*.elf binary
+*.prx binary
+*.a binary
+*.dds binary
+*.png binary
+*.jpg binary
