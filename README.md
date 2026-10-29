@@ -1,182 +1,131 @@
-<p align="center">
-  <img src="ps5/app/sce_sys/icon0.png" width="128" alt="PS5LM">
-</p>
+# PS5LM — Chinese UI
 
-<h1 align="center">PS5LM</h1>
+使用 DeepSeek V4.1 Flash 一句话汉化：把界面文案换成中文、给字体烘一套 GB2312 汉字，然后重新编译。
 
-<p align="center">
-  <b>Your PS5 runs the language model. Every device on your network uses it.</b><br>
-  llama.cpp on the console's GPU, with OpenAI and Anthropic APIs and a screen made for the TV.
-</p>
+[PS5LM](https://github.com/cobanov/PS5LM) 让零售 PS5 直接跑 llama.cpp，把这台游戏机变成局域网里的模型服务器。
+本仓库是它的**中文界面版**：电视上的 home / models / api / console / settings 五个页面全部中文，
+聊天面板里模型吐出来的中文也不会再变成 `????`。
 
-<p align="center">
-  <b><a href="https://github.com/cobanov/PS5LM/releases/latest">Get the app</a></b> ·
-  <a href="https://ps5lm.cobanov.dev">Website</a> ·
-  <a href="#try-it">Get started</a> ·
-  <a href="https://github.com/cobanov/PS5LM/issues">Issues</a>
-</p>
+下载即用，不需要编译、不需要 WSL、不需要认识那堆交叉编译依赖。
 
-> **New: decision models, powered by [Ollaya](https://ollaya.dev).** PS5LM now runs Jev-like
-> decision models (d1, Clef, OpenJev and more) on the GPU and answers the same `/v1/systemone`
-> API as Ollaya: typed decisions with calibrated probabilities, in a fraction of a second.
-
-PS5LM is for anyone with a jailbroken PS5 who wants a private model server at home. It loads a GGUF
-model onto the console's GPU and serves it to your laptop, your phone and your coding tools. It needs
-no PC while it runs, no cloud and no account.
-
-<p align="center">
-  <a href="docs/media/ps5lm-home.mp4"><img src="docs/media/ps5lm-home.gif" width="720" alt="Qwen 3.5 9B generating on a PS5, with the requests streaming across the TV"></a><br>
-  <sub>Qwen 3.5 9B answering requests from a laptop on a PS5 Slim. Click for the video.</sub>
-</p>
-
-<p align="center">
-  <img src="docs/media/app/home.jpg" width="49%" alt="Home: the model, its speed and the live requests">
-  <img src="docs/media/app/models.jpg" width="49%" alt="Models: the ones suggested for the PS5">
-  <img src="docs/media/app/home-decision.jpg" width="49%" alt="Home with a decision model">
-  <img src="docs/media/app/console.jpg" width="49%" alt="Console: temperature, power and load over time">
-  <img src="docs/media/app/api.jpg" width="49%" alt="API: the endpoints and an example">
-  <img src="docs/media/app/settings.jpg" width="49%" alt="Settings: a list of choices under the row">
-  <br><sub>Home, Models, Console, API and Settings on the TV.</sub>
-</p>
-
-## A model server under your TV
-
-- **It runs on the GPU.** llama.cpp's Vulkan backend on the console's RDNA 2 GPU, with 11.4 GB of the
-  shared memory for the model and its context. Every architecture and quantization llama.cpp knows
-  comes along.
-- **It answers your network.** OpenAI's `/v1/chat/completions`, Anthropic's `/v1/messages` (Claude Code
-  works against it) and a chat page in any browser. Point a client at `http://<console>:8081` and use
-  any model name: the loaded one answers.
-- **It decides, too.** Load a decision model and the console answers TypeSafe's `/v1/systemone`:
-  choice, score and yes-or-no questions about text and images, the API Ollaya serves on a PC.
-- **It shows its work.** Every request streams across the TV as a chat: which device asked, what it
-  asked, and the reply as it is written. Square sends a demo and Triangle opens a keyboard, so the
-  console can be tried from the couch.
-- **It watches the console.** A Console page charts temperature, power, GPU and CPU load over the
-  last two minutes or the last hour, beside a table of every reading.
-- **It picks what fits.** The planner reads each GGUF and gives it the longest context and best cache
-  that fit the memory free. A Suggested list holds models measured on the console, and the app
-  downloads from Hugging Face by itself, to internal storage, the M.2 drive or a USB drive.
-- **It reads images.** Models with an image projector (Gemma 4, MiniCPM-V, d1) take pictures in chat
-  and in decisions.
-
-| Model | Size | On a PS5 Slim |
-|---|---|---|
-| Qwen 3.5 0.8B, Q4_K_M | 0.5 GB | 207 tokens a second |
-| Qwen 3.5 9B, Q4_K_M | 5.3 GB | 55 tokens a second |
-| Qwen 3.8 27B, UD-Q2_K_XL | 9.2 GB | about 20 tokens a second, 64k context |
-| d1 Omni 600M, a decision model | 1.1 GB | 3 questions in 0.3 s; a 720p image and 7 questions in 2.9 s |
-
-## Decision models, powered by Ollaya
-
-[Ollaya](https://github.com/ollaya-dev/ollaya) runs open decision models on a PC the way Ollama runs
-language models. PS5LM brings the same idea to the console: a decision model reads a state and
-answers typed questions in one forward pass, with no text generated.
-
-```sh
-curl http://<console>:8081/v1/systemone -H 'Content-Type: application/json' -d '{
-  "state": "I was charged twice this month. Refund me or I cancel.",
-  "questions": {
-    "intent": {"type": "choice", "instructions": "What does the customer want?",
-               "criteria": {"refund": null, "information": null, "cancel": null}},
-    "angry":  {"type": "noul", "instructions": "Is the customer angry?"}
-  }
-}'
-```
-
-The Suggested list has d1 Omni 600M, d1 3B and Clef Flash. Any GGUF that carries llama.cpp's
-decision metadata loads the same way, and the app labels it a decision model.
-
-## Try it
-
-You need a PS5 on firmware 7.00 to 13.60, jailbroken, with these payloads loaded:
-
-| Payload | For | |
-|---|---|---|
-| [kstuff-lite](https://github.com/EchoStretch/kstuff-lite) | the kernel patches homebrew runs on | required |
-| [etaHEN](https://github.com/etaHEN/etaHEN) | homebrew support | required |
-| [ShadowMountPlus](https://github.com/drakmor/ShadowMountPlus) | puts PS5LM on the home screen from `/data/homebrew` | required |
-| [elfldr](https://github.com/ps5-payload-dev/elfldr) (port 9021) | temperature, power and real free space, through ps5-exporter | recommended |
-| [ftpsrv](https://github.com/ps5-payload-dev/ftpsrv) (port 2121) | installing the app, copying models from a PC | recommended |
-
-1. Download `ps5lm-app-vX.Y.Z.zip` from the [latest release](https://github.com/cobanov/PS5LM/releases/latest) and unzip it.
-2. Copy the `PPSA99575` folder to `/data/homebrew` over FTP. ShadowMountPlus adds **PS5LM** to the
-   home screen.
-3. Open PS5LM, go to **Models > Suggested** and get a model. Or copy a `.gguf` to
-   `/data/PS5LM/models`, or to `PS5LM/models` on a USB drive.
-4. Load it. Once Home says Ready, open `http://<console>:8081` in a browser, or point your OpenAI or
-   Anthropic client at it.
-
-To update, copy the new folder over the old one. Settings, models and downloads stay in
-`/data/PS5LM`.
-
-If PS5LM cannot write to `/data/PS5LM` ("Cannot write to /data/PS5LM/models"), the HEN has not
-opened the console's storage to it. On OnionHEN, add `PPSA99575` to `exact_title_ids` in the
-`[app_jailbreak]` section of `/data/OnionHEN/config.ini`, then start PS5LM again. Using it from coding tools (opencode, Codex, Claude Code) is in
-[docs/CLI.md](docs/CLI.md).
-
-| Where | Button | Does |
-|---|---|---|
-| Everywhere | L1 / R1 | Home, Models, API, Console, Settings |
-| Home | Cross | change the model |
-| Home | Square / Triangle | send a demo request / type a message |
-| Models | D-pad, Cross | choose a section and a model; load, unload or download it |
-| Models, Search | L2 / R2, Square | change the search; check whether a file fits |
-| Models, Downloads | Cross, Square | pause or resume; cancel (press twice) or clear |
-| Console | L2 / R2 | the last two minutes / the last hour |
-| Settings | D-pad, Cross | choose a category and a row; flip it, or pick from its list |
-| Settings, Diagnostics | Square, Triangle | app or server log; errors only |
-
-## Looking inside the model
-
-This fork adds an opt-in endpoint that returns the numbers the model computed.
-`POST /v1/introspect` answers with the whole logit row at the positions you name,
-the probabilities and the entropy, with one row of a named graph tensor for a
-named layer, and it can also change one channel in place before the rest of the
-model reads it.
-
-The endpoint is off by default. Turn it on in **Settings > Developer > Logits and
-activations API**.
-
-```sh
-python3 scripts/ps5lm-introspect.py --host <console> --prompt "Once upon a time" \
-    --positions last --top-k 10 --tensors l_out --layers 12
-```
-
-[Introspection](docs/INTROSPECTION.md) records the request fields, the tensor
-names, and the cost of each option.
-
-## Want to tinker?
-
-C++ on [ps5-homebrew-ui](https://github.com/blackbearreloaded/ps5-homebrew-ui), llama.cpp with
-ggml-vulkan on [PS5_Vulkan](https://github.com/mihawk-99/PS5_Vulkan)'s RADV, built on Linux.
-
-[Building](docs/BUILDING.md) · [Console notes](docs/CONSOLE.md) · [Porting](docs/PORTING.md) ·
-[Research](docs/RESEARCH.md) · [Models that fit](docs/MODELS.md) · [Roadmap](docs/ROADMAP.md) ·
-[Changelog](CHANGELOG.md) · [The original payload](docs/PAYLOAD.md)
-
-## Built around it
-
-- [ps5lm_ha](https://github.com/phoinixgrr/ps5lm_ha) by [phoinixgrr](https://github.com/phoinixgrr):
-  a Home Assistant integration that wakes the console from rest mode, starts PS5LM, waits for the
-  model and puts the console back to sleep when done, with the model and console readings as sensors.
-
-## Thanks
-
-- [abhi245y](https://github.com/abhi245y), who built the native GPU app this one grew from (PS5LM Plus).
-- [llama.cpp and ggml](https://github.com/ggml-org/llama.cpp), which do the actual work.
-- [Mihawk-99](https://github.com/mihawk-99) for PS5_Vulkan and RADV on the PS5, and
-  [PS5CEMU-HAR](https://github.com/premohq/PS5CEMU-HAR) for the driver patches in `patches/mesa`.
-- [BlackBearReloaded](https://github.com/blackbearreloaded) for ps5-homebrew-ui, ps5-opengl and
-  ps5-homebrew-dev-protocol, and [John Törnblom](https://github.com/ps5-payload-dev) for the SDK.
-- [Marice](https://github.com/Marice/ps5-exporter) for ps5-exporter, which the app carries.
-- [Manrope](https://github.com/sharanda/manrope) (OFL) for the type, and
-  [PocketVibe](https://github.com/cobanov/pocketvibe) for the interface sounds.
+> 上游项目：[cobanov/PS5LM](https://github.com/cobanov/PS5LM) · 许可：GPL-3.0-or-later
+> 本仓库的改动同样以 GPL-3.0-or-later 发布。
 
 ---
 
-GPL-3.0-or-later, see [LICENSE](LICENSE). llama.cpp keeps its MIT licence, Manrope its OFL. No Sony
-SDK files, keys, firmware or model weights are in this repository.
+## 一、装到 PS5 上（下载即用）
 
-PS5LM is not affiliated with Sony Interactive Entertainment. "PlayStation" and "PS5" are trademarks
-of Sony Interactive Entertainment.
+前提：PS5 已经越狱，`/data` 可写，`ps5-payload-dev` 那套 payload 能跑。这些是上游的事，[它的 README](https://github.com/cobanov/PS5LM) 写得很清楚。
+
+1. 到本仓库的 **Releases** 下最新那个 `ps5lm-app-v*-zh*.zip`
+2. 解压，把整个 `PPSA99575` 文件夹传到 PS5 的 `/data/homebrew/` 下（FTP 走 2121 端口）
+3. **重启 PS5**（ShadowMountPlus 只在开机那一刻扫 `/data/homebrew`）
+4. 主屏点 `WebKit Autoloader`，等它跑完
+5. 再点 `PS5LM` 图标
+
+进不去的话看日志：`/data/PS5LM/app.log`，里面应该有 `ps5lm-app: dashboard ready`。
+
+模型自己去 Hugging Face 下（`.gguf`），放进 `/data/PS5LM/models/`。本仓库不提供模型。
+
+## 二、和原版的差别
+
+| 项 | 原版 | 本仓库 |
+|---|---|---|
+| 界面语言 | 英文硬编码 | 中文 |
+| dashboard 字体 | Manrope，只含拉丁字符 | Noto Sans SC，含 **GB2312 全集 6763 汉字** |
+| 字体体积 | 约 1.8 MB | 约 16.7 MB（含汉字的代价） |
+| 聊天面板 | 模型输出中文显示为 `????` | 正常显示 |
+| 中文长文本换行 | 按空格断词，整段被截断 | 按 UTF-8 字符断行 |
+
+改动都在这几个文件里：
+
+```
+ps5/app/dashboard.cpp      界面文案（词条表见 scripts/translations-zh.csv）
+ps5/app/main.cpp           电视通知文案 + 字体读取上限
+ps5/app/stats.cpp          Console 页标签
+ps5/app/market.cpp         下载页提示
+ps5/app/model_plan.cpp     模型适配说明
+ps5/app/activity.cpp       聊天头信息（"N 个问题" / "N 张图"）
+ps5/app/suggested.hpp      推荐模型的一句话介绍
+ps5/app/assets/fonts/      烘焙好的中文字体
+scripts/bake-fonts-cn.sh   字体烘焙脚本
+scripts/gen-charset.py     字符集生成器
+scripts/apply-translations.py  按词条表批量替换源码
+scripts/translations-zh.csv    词条表（文件 / 英文 / 中文）
+scripts/build-app.sh       CMake 4.x 的 RPATH 兼容
+```
+
+## 三、自己编译
+
+想改译文、或者要跟自己的上游同步，就自己编。**必须在 x86-64 Linux 上**（Arch / Fedora 都行，Ubuntu 26.04 实测也过），Windows 只能当宿主。
+
+装依赖见上游的 [docs/BUILDING.md](docs/BUILDING.md)，另外补这些：
+
+```bash
+# Ubuntu 26.04 / Debian
+apt-get install -y llvm-21-dev libllvmspirvlib-21-dev libclang-21-dev libclc-22-dev python3-fonttools
+```
+
+> 注意：`vulkan-headers`、`shaderc` 这两个包名在新版 Debian/Ubuntu 里不存在，真名是
+> `libvulkan-dev`、`libshaderc-dev`。一包失败整批 apt 都会废掉。
+
+然后：
+
+```bash
+# 上游的流程，一步不少
+PS5_MESA_REVISION=$(git -C .deps/src/PS5_Mesa rev-parse HEAD) \
+  bash .deps/src/PS5_Vulkan/tools/build-radv.sh release
+scripts/build-app.sh        # 产出 build/app-ps5/title/PPSA99575
+
+# 打包
+scripts/release-app.sh
+```
+
+**就这样，直接能出中文版** —— 中文字体已经烘好提交在 `ps5/app/assets/fonts/` 里（16.7 MB），
+`build-app.sh` 只是把它拷进 title 目录，不重新烘。
+
+只有下面两种情况才需要动字体：
+
+```bash
+# ① 改了译文，新加的字不在现有字符集里
+# ② 想换字号/换字体
+mkdir -p .deps/fonts
+curl -L -o .deps/fonts/NotoSansSC-VF.ttf \
+  'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf'
+scripts/bake-fonts-cn.sh     # 会先扫源码生成字符集，再烘三个字重
+```
+
+`bake-fonts-cn.sh` 用的是 `scripts/font-baker/bake_font.cpp`（本仓库自带的那份，
+支持 `@字符集文件` 参数），不依赖 submodule 里原版烘焙器。
+
+字体必须是 **TrueType 轮廓**（文件头 `00 01 00 00`）。OTF 是 CFF 轮廓（`OTTO`），
+`stb_truetype` 根本不认，烘出来是空的 —— 这个坑踩过。
+
+## 四、没汉化的地方
+
+老实列出来，省得你找：
+
+- **接收到的英文原文**：别的设备发来的英文提问、模型的英文回答，原样显示（那是内容不是界面）
+- **生僻字**：字体装的是 GB2312 全集，覆盖日常用字 99.9%。超出范围的冷僻字、异体字
+  （比如 `𠮷`）仍然缺字形。要全覆盖得换 GBK 或做分块加载，工作量另算
+- **日志和代码块**：Console 页的日志是 llama.cpp 原样输出，保持英文（那是给排查用的）
+- **模型名和量化名**：`Qwen3.8 27B`、`UD-Q2_K_XL` 这些不翻，翻了反而认不出
+
+## 五、跟上游同步
+
+```bash
+git remote add upstream https://github.com/cobanov/PS5LM.git
+git fetch upstream
+git rebase upstream/main zh-cn
+```
+
+冲突只在译文那几行。上游要是改了界面布局（加了新的英文串），跟着在 `dashboard.cpp` 里补一条就行。
+
+## 六、反馈
+
+界面漏翻、翻译别扭、某个字还是问号 —— 开 issue，附上：哪个页面、原句、截图（有最好）。
+日志在 `/data/PS5LM/app.log`，`grep font` 能看出字体有没有加载成功。
+
+---
+
+<sub>上游 PS5LM 由 cobanov 与各位贡献者维护。PS5 是 Sony 的商标，本仓库与 Sony 无关。</sub>
