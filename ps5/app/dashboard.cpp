@@ -69,12 +69,12 @@ constexpr int   kVisibleRows = 7;
 constexpr float kTau = 6.2831853f;
 constexpr const char * kDash = "\xE2\x80\x93";  // an en dash: nothing to show
 
-constexpr const char * kPageNames[Dashboard::kPages] = { "Home", "Models", "API", "Console", "Settings" };
-constexpr const char * kSectionNames[Dashboard::kSections] = { "On this PS5", "Suggested", "Search", "Downloads" };
+constexpr const char * kPageNames[Dashboard::kPages] = { "主页", "模型", "API", "控制台", "设置" };
+constexpr const char * kSectionNames[Dashboard::kSections] = { "本机模型", "推荐", "搜索", "下载" };
 
 // The market's searches, switched with L2/R2: Hugging Face's most downloaded
 // GGUF repositories, then the families the presets know.
-constexpr const char * kMarketChips[] = { "Popular", "Qwen", "Gemma", "Llama", "Mistral", "Phi", "Granite" };
+constexpr const char * kMarketChips[] = { "热门", "Qwen", "Gemma", "Llama", "Mistral", "Phi", "Granite" };
 constexpr int          kMarketChipCount = 7;
 
 // ---- Settings -------------------------------------------------------------------
@@ -94,28 +94,28 @@ struct SettingCategory {
 };
 
 constexpr SettingCategory kCategories[] = {
-    { "Startup",
-      { { Setting::auto_load, "Load a model at launch", "Off: the app opens and waits for a choice" },
-        { Setting::default_model, "Model to load", "One of the models on this PS5" } },
+    { "启动",
+      { { Setting::auto_load, "启动时加载模型", "关：app 启动后等待选择" },
+        { Setting::default_model, "要加载的模型", "本机上的某个模型" } },
       2 },
-    { "Model",
-      { { Setting::ctx_cap, "Longest context", "The longest that fits, up to this; applies at the next load" },
-        { Setting::kv_type, "Context cache", "Auto picks the best that fits; a fixed type trades length for quality" } },
+    { "模型",
+      { { Setting::ctx_cap, "最长上下文", "能放下的最长值，上限在此；下次加载生效" },
+        { Setting::kv_type, "上下文缓存", "自动挑能放下的最佳；固定类型用长度换质量" } },
       2 },
-    { "Chat",
-      { { Setting::tools, "File tools", "The browser chat may read and write files in /data/PS5LM/scratch" },
-        { Setting::scratch_limit, "Warn above", "A notification when that folder grows past this" },
-        { Setting::clear_scratch, "Clear the scratch folder", "Deletes everything the chat's tools wrote" } },
+    { "聊天",
+      { { Setting::tools, "文件工具", "浏览器聊天可在 /data/PS5LM/scratch 读写文件" },
+        { Setting::scratch_limit, "超过提醒", "该目录超过这个大小就发通知" },
+        { Setting::clear_scratch, "清空 scratch 目录", "删除聊天工具写入的全部内容" } },
       3 },
-    { "Sound and storage",
-      { { Setting::sounds, "Sounds", "Interface sounds on the TV" },
-        { Setting::download_dir, "Save downloads to", "Internal storage, or PS5LM/models on an M.2 or USB drive" } },
+    { "音效与存储",
+      { { Setting::sounds, "Sounds", "电视上的界面音效" },
+        { Setting::download_dir, "下载保存到", "内置存储，或 M.2／USB 硬盘上的 PS5LM/models" } },
       2 },
-    { "Developer",
-      { { Setting::introspect, "Logits and activations API",
-          "Off: /v1/introspect is closed. On: the raw numbers. A change restarts the model" } },
+    { "开发者",
+      { { Setting::introspect, "Logits 与激活值 API",
+          "关：/v1/introspect 关闭。开：输出原始数值。改动会重启模型" } },
       1 },
-    { "Diagnostics", {}, 0 },
+    { "诊断", {}, 0 },
 };
 constexpr int kCategoryCount = 6;
 constexpr int kDiagnostics = 5;
@@ -298,7 +298,10 @@ void toggle_switch(gfx::DrawList & l, float right, float cy, bool on) {
     l.circle(on ? r.x + r.w - 18 : r.x + 18, cy, 14, on ? kInk : kInk2);
 }
 
-// Greedy word wrap to `width`; a word longer than a line is cut.
+// Greedy word wrap to `width`; a word longer than a line is cut. A language
+// written without spaces (Chinese) arrives as one long word, so a line that
+// still does not fit is broken between characters: every UTF-8 sequence stays
+// whole, or the last one would turn into U+FFFD.
 std::vector<std::string> wrap(const ui::FontRef & f, const std::string & raw, float size, float width) {
     std::string text = raw;  // line breaks and tabs have no glyph: spaces
     std::replace_if(text.begin(), text.end(), [](char c) { return c == '\n' || c == '\r' || c == '\t'; }, ' ');
@@ -323,10 +326,36 @@ std::vector<std::string> wrap(const ui::FontRef & f, const std::string & raw, fl
     if (!line.empty()) {
         lines.push_back(line);
     }
-    for (auto & l : lines) {
+    std::vector<std::string> wrapped;
+    for (const auto & l : lines) {
+        if (f.measure(l, size) <= width) {
+            wrapped.push_back(l);
+            continue;
+        }
+        std::string current;
+        for (size_t i = 0; i < l.size();) {
+            const auto lead = (unsigned char) l[i];
+            size_t length = lead >= 0xf0 ? 4 : lead >= 0xe0 ? 3 : lead >= 0xc0 ? 2 : 1;
+            if (i + length > l.size()) {
+                length = 1;
+            }
+            const std::string piece = l.substr(i, length);
+            if (!current.empty() && f.measure(current + piece, size) > width) {
+                wrapped.push_back(current);
+                current = piece;
+            } else {
+                current += piece;
+            }
+            i += length;
+        }
+        if (!current.empty()) {
+            wrapped.push_back(current);
+        }
+    }
+    for (auto & l : wrapped) {
         l = f.font->fit(l, size, width);
     }
-    return lines;
+    return wrapped;
 }
 
 int first_visible(int cursor, int rows) {
@@ -356,16 +385,16 @@ std::string download_line(const Download & d) {
     if (d.state == DownloadState::running && d.mbps > 0.05) {
         const double left_s = (double) (d.bytes - std::min(d.done, d.bytes)) / (d.mbps * 1e6);
         if (left_s >= 3600) {
-            std::snprintf(t, sizeof(t), "%.1f of %.1f GB, %.1f MB/s, %.0f h %02.0f min left", done, all, d.mbps,
+            std::snprintf(t, sizeof(t), "%.1f / %.1f GB, %.1f MB/s, 剩 %.0f 小时 %02.0f 分", done, all, d.mbps,
                           std::floor(left_s / 3600), std::fmod(left_s / 60, 60));
         } else {
-            std::snprintf(t, sizeof(t), "%.1f of %.1f GB, %.1f MB/s, %.0f min left", done, all, d.mbps, std::ceil(left_s / 60));
+            std::snprintf(t, sizeof(t), "%.1f / %.1f GB, %.1f MB/s, 剩 %.0f 分钟", done, all, d.mbps, std::ceil(left_s / 60));
         }
         return t;
     }
-    std::snprintf(t, sizeof(t), "%.1f of %.1f GB", done, all);
+    std::snprintf(t, sizeof(t), "%.1f / %.1f GB", done, all);
     if (d.state == DownloadState::running) {
-        return std::string(t) + ", starting";
+        return std::string(t) + "，启动中";
     }
     if (d.state == DownloadState::done) {
         return d.note;
@@ -373,7 +402,7 @@ std::string download_line(const Download & d) {
     if (!d.note.empty()) {
         return std::string(t) + ", " + d.note;
     }
-    return d.state == DownloadState::queued ? std::string(t) + ", waiting its turn" : t;
+    return d.state == DownloadState::queued ? std::string(t) + "，排队等候" : t;
 }
 
 // The value of a setting as its row shows it, and one step of it.
@@ -382,7 +411,7 @@ std::string setting_text(const Settings & s, Setting id, const std::vector<Model
     switch (id) {
         case Setting::default_model: {
             if (s.default_model.empty()) {
-                return "None";
+                return "无";
             }
             for (const auto & m : models) {
                 if (m.file == s.default_model) {
@@ -391,9 +420,9 @@ std::string setting_text(const Settings & s, Setting id, const std::vector<Model
                     return name + "  " + build;
                 }
             }
-            return "Missing";
+            return "缺失";
         }
-        case Setting::ctx_cap: return format("%.0fk tokens", s.ctx_cap / 1024.0);
+        case Setting::ctx_cap: return format("%.0fk token", s.ctx_cap / 1024.0);
         case Setting::kv_type: return s.kv_type == "auto" ? "Auto" : s.kv_type;
         case Setting::scratch_limit: return format("%.0f GB", (double) s.scratch_limit_gib);
         case Setting::download_dir: {
@@ -402,7 +431,7 @@ std::string setting_text(const Settings & s, Setting id, const std::vector<Model
                     return d.name;
                 }
             }
-            return s.download_dir.rfind("/mnt/ext", 0) == 0 ? "M.2 drive, not found" : "USB drive, not found";
+            return s.download_dir.rfind("/mnt/ext", 0) == 0 ? "M.2 硬盘，未找到" : "USB 硬盘，未找到";
         }
         default: return "";
     }
@@ -438,7 +467,7 @@ std::vector<Choice> choices_of(const Settings & s, Setting id, const std::vector
     };
     switch (id) {
         case Setting::default_model:
-            add("None", "Wait for a choice", s.default_model.empty(), [](Settings & v) { v.default_model.clear(); });
+            add("无", "等待选择", s.default_model.empty(), [](Settings & v) { v.default_model.clear(); });
             for (const auto & m : models) {
                 if (m.fits) {
                     std::string name, build;
@@ -450,12 +479,12 @@ std::vector<Choice> choices_of(const Settings & s, Setting id, const std::vector
             break;
         case Setting::ctx_cap:
             for (uint32_t c : kCtxSteps) {
-                add(format("%.0fk tokens", c / 1024.0), "", s.ctx_cap == c, [c](Settings & v) { v.ctx_cap = c; });
+                add(format("%.0fk token", c / 1024.0), "", s.ctx_cap == c, [c](Settings & v) { v.ctx_cap = c; });
             }
             break;
         case Setting::kv_type: {
-            const char * notes[] = { "The best that fits", "Full quality, the most memory", "Near full quality, half the memory",
-                                     "A quarter of the memory" };
+            const char * notes[] = { "能放下的最佳值", "完整精度，占内存最多", "接近完整精度，内存减半",
+                                     "四分之一内存" };
             for (int i = 0; i < 4; ++i) {
                 const std::string t = kKvSteps[i];
                 add(i == 0 ? "Auto" : t, notes[i], s.kv_type == t, [&](Settings & v) { v.kv_type = t; });
@@ -483,16 +512,16 @@ const char * local_name(const SuggestedFile & f) { return f.save_as ? f.save_as 
 
 // What Square sends from Home, in turn: something to show the model off with.
 constexpr const char * kChatDemos[] = {
-    "In two sentences, how can a PS5 run a language model?",
-    "Write a haiku about a game console that dreams in tokens.",
-    "Give me three names for a home AI server that lives under the TV.",
-    "What is 17 times 23? Show the steps in one line.",
+    "两句话说明 PS5 怎么跑语言模型？",
+    "写一首俳句：一台用 token 做梦的游戏机。",
+    "给住在电视下面的家用 AI 服务器起三个名字。",
+    "17 乘 23 是多少？一行里给出步骤。",
 };
 constexpr const char * kDecisionDemos[] = {
-    "I was charged twice this month. Refund me or I cancel.",
-    "Love the new update, everything is so much faster now!",
-    "Where can I find the invoice for last month?",
-    "Third time asking. Cancel my subscription today.",
+    "这个月被扣了两次费。退钱，不然我退订。",
+    "新版太棒了，一切都快多了！",
+    "上个月的发票在哪看？",
+    "第三次问了。今天就退订。",
 };
 constexpr int kDemos = 4;
 
@@ -685,8 +714,8 @@ void Dashboard::update_home(const hui::InputFrame & input, ui::Feedback & feedba
         request_ = { Request::ask, (decision ? kDecisionDemos : kChatDemos)[demo_++ % kDemos] };
         feedback.play(Cue::select);
     } else if (input.is_pressed(Action::north)) {
-        prompt_.set_title(decision ? "Text to decide on" : "Message");
-        prompt_.field.set_placeholder(decision ? "A customer message, a review, a ticket" : "Ask anything");
+        prompt_.set_title(decision ? "待判断的文本" : "消息");
+        prompt_.field.set_placeholder(decision ? "A customer message, a review, a ticket" : "问点什么");
         prompt_.open(feedback);
     }
 }
@@ -1093,7 +1122,7 @@ void Dashboard::draw_status(gfx::DrawList & l) const {
     }
     if (live_.uptime_s > 0) {
         const double m = live_.uptime_s / 60.0;
-        items.push_back(m < 60 ? format("Up %.0f min", std::floor(m)) : format("Up %.1f h", m / 60.0));
+        items.push_back(m < 60 ? format("已运行 %.0f 分钟", std::floor(m)) : format("已运行 %.1f 小时", m / 60.0));
     }
     float x = kRight;
     for (auto it = items.rbegin(); it != items.rend(); ++it) {
@@ -1131,59 +1160,59 @@ void Dashboard::draw_hints(gfx::DrawList & l) const {
         return;  // the dialog has its own
     }
     if (picker_ && page_ == kSettingsPage) {
-        h = { { ui::Button::circle, "Cancel" }, { ui::Button::cross, "Choose" } };
+        h = { { ui::Button::circle, "取消" }, { ui::Button::cross, "选择" } };
     } else if (page_ == kHomePage) {
-        h = { { ui::Button::l1, "Pages", ui::Button::r1 } };
+        h = { { ui::Button::l1, "页面", ui::Button::r1 } };
         if (live_.state == ServerState::ready || live_.state == ServerState::generating) {
-            h.push_back({ ui::Button::square, "Demo" });
-            h.push_back({ ui::Button::triangle, "Message" });
+            h.push_back({ ui::Button::square, "示例" });
+            h.push_back({ ui::Button::triangle, "消息" });
         }
-        h.push_back({ ui::Button::cross, live_.model_label.empty() ? "Choose a model" : "Change model" });
+        h.push_back({ ui::Button::cross, live_.model_label.empty() ? "选择模型" : "更换模型" });
     } else if (page_ == kConsolePage) {
-        h = { { ui::Button::l1, "Pages", ui::Button::r1 }, { ui::Button::l2, "Range", ui::Button::r2 } };
+        h = { { ui::Button::l1, "页面", ui::Button::r1 }, { ui::Button::l2, "范围", ui::Button::r2 } };
     } else if (page_ == kModelsPage) {
         if (!in_list_) {
-            h = { { ui::Button::dpad, "Choose" }, { ui::Button::cross, "Open" } };
+            h = { { ui::Button::dpad, "选择" }, { ui::Button::cross, "打开" } };
         } else if (section_ == kLocal) {
             const ModelRow * m = local_cursor_ < (int) live_.models.size() ? &live_.models[(size_t) local_cursor_] : nullptr;
-            h = { { ui::Button::circle, "Back" } };
+            h = { { ui::Button::circle, "返回" } };
             if (m && (m->current || m->fits)) {
-                h.push_back({ ui::Button::cross, m->current ? "Unload" : "Load" });
+                h.push_back({ ui::Button::cross, m->current ? "卸载" : "加载" });
             }
         } else if (section_ == kSuggested) {
-            h = { { ui::Button::circle, "Back" }, { ui::Button::cross, "Download" } };
+            h = { { ui::Button::circle, "返回" }, { ui::Button::cross, "下载" } };
         } else if (section_ == kSearch) {
-            h = market_files_ ? std::vector<ui::Hint>{ { ui::Button::circle, "Back" }, { ui::Button::square, "Check fit" },
-                                                       { ui::Button::cross, "Download" } }
-                              : std::vector<ui::Hint>{ { ui::Button::l2, "Search", ui::Button::r2 }, { ui::Button::circle, "Back" },
-                                                       { ui::Button::cross, "Open" } };
+            h = market_files_ ? std::vector<ui::Hint>{ { ui::Button::circle, "返回" }, { ui::Button::square, "检查适配" },
+                                                       { ui::Button::cross, "下载" } }
+                              : std::vector<ui::Hint>{ { ui::Button::l2, "搜索", ui::Button::r2 }, { ui::Button::circle, "返回" },
+                                                       { ui::Button::cross, "打开" } };
         } else {
             const Download * d = dl_cursor_ < (int) market_.downloads.size() ? &market_.downloads[(size_t) dl_cursor_] : nullptr;
-            h = { { ui::Button::circle, "Back" } };
+            h = { { ui::Button::circle, "返回" } };
             if (d) {
                 const bool runs = d->state == DownloadState::running || d->state == DownloadState::retrying ||
                                   d->state == DownloadState::queued;
-                h.push_back({ ui::Button::square, d->state == DownloadState::done ? "Clear" : dl_confirm_ == dl_cursor_ ? "Yes, delete it" : "Cancel" });
+                h.push_back({ ui::Button::square, d->state == DownloadState::done ? "清除" : dl_confirm_ == dl_cursor_ ? "是，删除" : "取消" });
                 if (d->state != DownloadState::done) {
-                    h.push_back({ ui::Button::cross, runs ? "Pause" : d->state == DownloadState::failed ? "Try again" : "Resume" });
+                    h.push_back({ ui::Button::cross, runs ? "暂停" : d->state == DownloadState::failed ? "重试" : "继续" });
                 }
             }
         }
     } else if (page_ == kApiPage) {
-        h = { { ui::Button::l1, "Pages", ui::Button::r1 } };
+        h = { { ui::Button::l1, "页面", ui::Button::r1 } };
     } else if (!in_rows_) {
-        h = { { ui::Button::dpad, "Choose" }, { ui::Button::cross, "Open" } };
+        h = { { ui::Button::dpad, "选择" }, { ui::Button::cross, "打开" } };
     } else if (setting_category_ == kDiagnostics) {
-        h = { { ui::Button::dpad, "Scroll" }, { ui::Button::square, log_llama_ ? "App log" : "Server log" },
-              { ui::Button::triangle, log_errors_ ? "All lines" : "Errors only" } };
+        h = { { ui::Button::dpad, "滚动" }, { ui::Button::square, log_llama_ ? "app 日志" : "服务器日志" },
+              { ui::Button::triangle, log_errors_ ? "全部" : "仅错误" } };
     } else {
         const Setting id = kCategories[setting_category_].rows[setting_row_].id;
         if (id == Setting::clear_scratch) {
-            h = { { ui::Button::circle, "Back" }, { ui::Button::cross, "Clear" } };
+            h = { { ui::Button::circle, "返回" }, { ui::Button::cross, "清除" } };
         } else if (is_toggle(id)) {
-            h = { { ui::Button::circle, "Back" }, { ui::Button::cross, "Switch" } };
+            h = { { ui::Button::circle, "返回" }, { ui::Button::cross, "切换" } };
         } else {
-            h = { { ui::Button::circle, "Back" }, { ui::Button::cross, "Change" } };
+            h = { { ui::Button::circle, "返回" }, { ui::Button::cross, "更改" } };
         }
     }
     ui::draw_hints(l, fonts_, style, h.data(), (int) h.size(), kRight, true, layout);
@@ -1198,23 +1227,23 @@ void Dashboard::draw_home(gfx::DrawList & l) const {
 
     // Left: the model.
     if (!loaded || live_.state == ServerState::no_model) {
-        put(l, f.regular, "Nothing is loaded", kLeft, 260, 26, kInk2);
-        put(l, f.regular, "Choose a model", kLeft, 340, 64, kInk);
-        put(l, f.regular, "It runs on the PS5's GPU and answers every device on your network.", kLeft, 400, 24, kInk2);
-        put(l, f.regular, format("%.0f models on this PS5", (double) live_.models.size()), kLeft, 444, 24, kInk3);
+        put(l, f.regular, "没有加载模型", kLeft, 260, 26, kInk2);
+        put(l, f.regular, "选择模型", kLeft, 340, 64, kInk);
+        put(l, f.regular, "它跑在 PS5 的 GPU 上，回答局域网里每台设备的请求。", kLeft, 400, 24, kInk2);
+        put(l, f.regular, format("本机 %.0f 个模型", (double) live_.models.size()), kLeft, 444, 24, kInk3);
         if (!live_.address.empty()) {
-            put(l, f.regular, "On your network", kLeft, 540, 22, kInk3);
+            put(l, f.regular, "局域网", kLeft, 540, 22, kInk3);
             put(l, f.regular, "http://" + live_.address, kLeft, 586, 32, kInk2);
         }
     } else {
         std::string name, build;
         split_name(live_.model_label, &name, &build);
-        put(l, f.regular, !live_.phase.empty() ? "Starting" : decision ? "Decision model" : "Language model", kLeft, 250, 26,
+        put(l, f.regular, !live_.phase.empty() ? "启动中" : decision ? "决策模型" : "语言模型", kLeft, 250, 26,
             kInk2);
         put(l, f.regular, f.regular.font->fit(name, 64, 860), kLeft, 326, 64, kInk);
         std::string detail = build;
         if (live_.ctx > 0) {
-            detail += (detail.empty() ? "" : "    ") + format("%.0fk context", live_.ctx / 1024.0);
+            detail += (detail.empty() ? "" : "    ") + format("%.0fk 上下文", live_.ctx / 1024.0);
         }
         if (live_.model_gib > 0) {
             detail += (detail.empty() ? "" : "    ") + gb(live_.model_gib);
@@ -1222,9 +1251,9 @@ void Dashboard::draw_home(gfx::DrawList & l) const {
         put(l, f.regular, detail, kLeft, 372, 24, kInk3);
 
         // The state, as a car shows its gear: one word, coloured only when it matters.
-        const char * word = live_.state == ServerState::loading ? "Loading"
-                          : live_.state == ServerState::generating ? (decision ? "Deciding" : "Generating")
-                          : live_.state == ServerState::failed ? "Stopped" : "Ready";
+        const char * word = live_.state == ServerState::loading ? "加载中"
+                          : live_.state == ServerState::generating ? (decision ? "判断中" : "生成中")
+                          : live_.state == ServerState::failed ? "已停止" : "Ready";
         const Color dot = live_.state == ServerState::failed ? kRed
                         : live_.state == ServerState::generating ? kBlue
                         : live_.state == ServerState::loading ? kInk2.with_alpha(0.5f + 0.5f * std::sin(clock_ * 4.0f)) : kGreen;
@@ -1241,7 +1270,7 @@ void Dashboard::draw_home(gfx::DrawList & l) const {
         bool known = true;
         if (live_.state == ServerState::loading) {
             big = load_shown_ * 100.0f;
-            unit = "% on the GPU";
+            unit = "% 在 GPU 上";
         } else if (decision) {
             // Time per decision (one question answered) over the latest requests:
             // what a decision model is judged by, as Ollaya reports it.
@@ -1254,18 +1283,18 @@ void Dashboard::draw_home(gfx::DrawList & l) const {
                 }
             }
             big = decisions ? (float) (1000.0 * seconds / decisions) : 0;
-            unit = "ms per decision";
+            unit = "毫秒/次决策";
             known = decisions > 0;
         } else {
             big = live_.gen_tps;
-            unit = "tokens per second";
+            unit = "token/秒";
             known = live_.gen_tps > 0;
             if (!known) {
                 // Idle: the last reply's speed, quieter.
                 for (auto it = live_.gen_history.rbegin(); it != live_.gen_history.rend(); ++it) {
                     if (*it > 0) {
                         big = *it;
-                        unit = "tokens per second, last reply";
+                        unit = "token/秒，上次回复";
                         known = true;
                         break;
                     }
@@ -1298,10 +1327,10 @@ void Dashboard::draw_home(gfx::DrawList & l) const {
             const double total = live_.model_gib + live_.kv_gib;
             put(l, f.regular,
                 !live_.phase.empty() ? live_.phase
-                : live_.load_progress < 0.985f ? std::string("Copying the weights into GPU memory") : std::string("Preparing the context"),
+                : live_.load_progress < 0.985f ? std::string("正在把权重拷进 GPU 内存") : std::string("准备上下文"),
                 kLeft, 822, 22, kInk2);
             if (total > 0) {
-                put(l, f.regular, format("%.1f", load_shown_ * total) + " of " + gb(total), kLeft + 860, 822, 22, kInk3,
+                put(l, f.regular, format("%.1f", load_shown_ * total) + " / " + gb(total), kLeft + 860, 822, 22, kInk3,
                     gfx::Align::right);
             }
         } else if (!decision) {
@@ -1311,12 +1340,12 @@ void Dashboard::draw_home(gfx::DrawList & l) const {
         // Two quiet meters: what the model holds, and how much of its context is used.
         const double used = live_.pool_gib - live_.free_gib;
         const float my = 868;
-        put(l, f.regular, "Memory", kLeft, my, 22, kInk2);
-        put(l, f.regular, format("%.1f", used) + " of " + gb(live_.pool_gib), kLeft + 400, my, 22, kInk,
+        put(l, f.regular, "内存", kLeft, my, 22, kInk2);
+        put(l, f.regular, format("%.1f", used) + " / " + gb(live_.pool_gib), kLeft + 400, my, 22, kInk,
              gfx::Align::right);
         meter(l, kLeft, my + 16, 400, live_.pool_gib > 0 ? (float) (used / live_.pool_gib) : 0, kInk.with_alpha(0.8f));
-        put(l, f.regular, "Context", kLeft + 460, my, 22, kInk2);
-        put(l, f.regular, thousands(live_.ctx_used) + " of " + format("%.0fk", live_.ctx / 1024.0), kLeft + 860, my, 22, kInk,
+        put(l, f.regular, "上下文", kLeft + 460, my, 22, kInk2);
+        put(l, f.regular, thousands(live_.ctx_used) + " / " + format("%.0fk", live_.ctx / 1024.0), kLeft + 860, my, 22, kInk,
              gfx::Align::right);
         meter(l, kLeft + 460, my + 16, 400, live_.ctx > 0 ? (float) live_.ctx_used / (float) live_.ctx : 0, kInk.with_alpha(0.8f));
     }
@@ -1327,10 +1356,10 @@ void Dashboard::draw_home(gfx::DrawList & l) const {
     const Rect p{ 1056, 196, kRight - 1056, 728 };
     l.rounded_rect(p, 24, kSurface);
     const float x = p.x + 56, w = p.w - 112;
-    put(l, f.regular, "Requests", x, p.y + 62, 22, kInk2);
-    std::string trip = thousands(live_.served) + " answered    " + thousands(live_.prompt_tokens) + " tokens in";
+    put(l, f.regular, "请求", x, p.y + 62, 22, kInk2);
+    std::string trip = thousands(live_.served) + " 已回答    " + thousands(live_.prompt_tokens) + " token 输入";
     if (!decision) {
-        trip += "    " + thousands(live_.tokens) + " out";
+        trip += "    " + thousands(live_.tokens) + " 输出";
     }
     put(l, f.regular, trip, x + w, p.y + 62, 20, kInk3, gfx::Align::right);
     l.line(x, p.y + 90, x + w, p.y + 90, 1.5f, kHair);
@@ -1372,9 +1401,9 @@ void Dashboard::draw_home(gfx::DrawList & l) const {
         }
     }
     if (turns.empty()) {
-        put(l, f.regular, "Requests from other devices appear here, as a chat.", x, top + 40, 22, kInk3);
+        put(l, f.regular, "其他设备的请求会以对话形式显示在这里。", x, top + 40, 22, kInk3);
         if (live_.state == ServerState::ready || live_.state == ServerState::generating) {
-            put(l, f.regular, "Square sends a demo, Triangle a message of your own.", x, top + 76, 22, kInk3);
+            put(l, f.regular, "□ 键发示例，△ 键发自己的话。", x, top + 76, 22, kInk3);
         }
     }
     float y = bottom - total;
@@ -1382,7 +1411,7 @@ void Dashboard::draw_home(gfx::DrawList & l) const {
         const Exchange & e = *t->e;
         const bool running = e.status == 0;
         const bool fault = e.status >= 400;
-        const std::string who = e.client.rfind("127.0.0.1", 0) == 0 ? std::string("This PS5") : e.client;
+        const std::string who = e.client.rfind("127.0.0.1", 0) == 0 ? std::string("本机") : e.client;
         if (y >= top) {
             put(l, f.regular, who + "    " + e.path, x + w, y + 18, 17, kInk3, gfx::Align::right);
         }
@@ -1415,10 +1444,10 @@ void Dashboard::draw_home(gfx::DrawList & l) const {
             put(l, f.regular, kDash, x, y + 22, 22, kInk3);
         }
         y += (float) std::max<size_t>(1, t->answered.size()) * 31 + 6;
-        std::string meta = running ? "Answering" : fault ? format("Error %.0f", (double) e.status)
+        std::string meta = running ? "回答中" : fault ? format("错误 %.0f", (double) e.status)
                                                          : format(e.seconds < 10 ? "%.1f s" : "%.0f s", e.seconds);
         if (!running && !fault && e.questions > 0) {
-            meta += format(", %.0f ms per decision", 1000.0 * e.seconds / e.questions);
+            meta += format("，%.0f 毫秒/次决策", 1000.0 * e.seconds / e.questions);
         }
         if (y >= top) {
             put(l, f.regular, meta, x, y + 22, 17, fault ? kRed : kInk3);
@@ -1431,7 +1460,7 @@ void Dashboard::draw_home(gfx::DrawList & l) const {
 
 void Dashboard::draw_models(gfx::DrawList & l) const {
     const ui::Fonts & f = fonts_;
-    put(l, f.semibold, "Models", kLeft, kTitleY, 44, kInk);
+    put(l, f.semibold, "模型", kLeft, kTitleY, 44, kInk);
 
     // The highlight: on a section, or on a row of the list.
     const float hx = in_list_ ? kListX : kLeft - 20;
@@ -1472,8 +1501,8 @@ void Dashboard::draw_local(gfx::DrawList & l, const Rect & a) const {
     const ui::Fonts & f = fonts_;
     const int rows = (int) live_.models.size();
     if (rows == 0) {
-        put(l, f.regular, "No models yet", a.x + 28, a.y + 46, 30, kInk);
-        put(l, f.regular, "Get one from Suggested, or copy a .gguf to /data/PS5LM/models.", a.x + 28, a.y + 90, 22, kInk2);
+        put(l, f.regular, "还没有模型", a.x + 28, a.y + 46, 30, kInk);
+        put(l, f.regular, "从「推荐」下一个，或把 .gguf 复制到 /data/PS5LM/models。", a.x + 28, a.y + 90, 22, kInk2);
         return;
     }
     const int first = first_visible(local_cursor_, rows);
@@ -1484,7 +1513,7 @@ void Dashboard::draw_local(gfx::DrawList & l, const Rect & a) const {
         split_name(m.label, &name, &build);
         const float nw = put(l, f.regular, f.regular.font->fit(name, 26, 640), a.x + 28, y + 36, 26, m.fits ? kInk : kInk3);
         put(l, f.regular, build, a.x + 28 + nw + 14, y + 36, 21, kInk3);
-        std::string meta = (m.decision.empty() ? "Language" : "Decision") + std::string("    ") + gb(m.size_gib);
+        std::string meta = (m.decision.empty() ? "语言" : "决策") + std::string("    ") + gb(m.size_gib);
         if (m.drive != "Internal storage" && !m.drive.empty()) {
             meta += "    " + m.drive;
         }
@@ -1494,7 +1523,7 @@ void Dashboard::draw_local(gfx::DrawList & l, const Rect & a) const {
         }
         meta += "    " + plan;
         put(l, f.regular, f.regular.font->fit(meta, 20, a.w - 260), a.x + 28, y + 66, 20, kInk3);
-        const char * state = m.current ? "Running" : m.fits ? "" : "Too big";
+        const char * state = m.current ? "运行中" : m.fits ? "" : "太大";
         put(l, f.semibold, state, a.x + a.w - 28, y + 50, 22, m.current ? kBlue : kInk3, gfx::Align::right);
     }
 }
@@ -1508,7 +1537,7 @@ void Dashboard::draw_suggested(gfx::DrawList & l, const Rect & a) const {
         const float nw = put(l, f.regular, s.name, a.x + 28, y + 36, 26, kInk);
         const double bytes = (double) s.model.bytes + (double) (s.mmproj.file ? s.mmproj.bytes : 0);
         put(l, f.regular, format("%.1f GB", bytes / 1073741824.0), a.x + 28 + nw + 14, y + 36, 21, kInk3);
-        std::string about = s.decision ? "Decision" : s.mmproj.file ? "Language, images" : "Language";
+        std::string about = s.decision ? "决策" : s.mmproj.file ? "语言、图像" : "语言";
         if (s.tps > 0) {
             about += format("    %.0f tokens a second here", s.tps);
         }
@@ -1519,13 +1548,13 @@ void Dashboard::draw_suggested(gfx::DrawList & l, const Rect & a) const {
         Color c = kInk3;
         for (const auto & m : live_.models) {
             if (m.label + ".gguf" == local_name(s.model)) {
-                state = m.current ? "Running" : "On this PS5";
+                state = m.current ? "运行中" : "本机模型";
                 c = m.current ? kBlue : kInk3;
             }
         }
         for (const auto & d : market_.downloads) {
             if (state.empty() && d.repo == s.repo && d.file == s.model.file && d.state != DownloadState::done) {
-                state = d.bytes ? format("%.0f%%", 100.0 * (double) d.done / (double) d.bytes) : "Waiting";
+                state = d.bytes ? format("%.0f%%", 100.0 * (double) d.done / (double) d.bytes) : "等待中";
                 c = kInk2;
             }
         }
@@ -1579,10 +1608,10 @@ void Dashboard::draw_market(gfx::DrawList & l, const Rect & a) const {
         const MarketFile & m = open->files[(size_t) i];
         const float y = top + kRowPitch * (float) (i - first);
         put(l, f.regular, f.regular.font->fit(m.name, 26, a.w - 300), a.x + 28, y + 36, 26, m.fits == 0 ? kInk3 : kInk);
-        const std::string plan = m.checking ? "Reading its header" : m.fits == -1 ? "Square checks whether it fits" : m.plan;
+        const std::string plan = m.checking ? "读取文件头" : m.fits == -1 ? "□ 键检查能否放下" : m.plan;
         put(l, f.regular, f.regular.font->fit(format("%.1f GB", m.bytes / 1073741824.0) + "    " + gb_text(plan), 20, a.w - 300), a.x + 28, y + 66,
              20, kInk3);
-        put(l, f.semibold, m.fits == 1 ? "Fits" : m.fits == 0 ? "Too big" : "", a.x + a.w - 28, y + 50, 22,
+        put(l, f.semibold, m.fits == 1 ? "可放入" : m.fits == 0 ? "太大" : "", a.x + a.w - 28, y + 50, 22,
              m.fits == 1 ? kInk2 : kInk3, gfx::Align::right);
     }
 }
@@ -1591,8 +1620,8 @@ void Dashboard::draw_downloads(gfx::DrawList & l, const Rect & a) const {
     const ui::Fonts & f = fonts_;
     const int rows = (int) market_.downloads.size();
     if (rows == 0) {
-        put(l, f.regular, "No downloads", a.x + 28, a.y + 46, 30, kInk);
-        put(l, f.regular, "Models you get from Suggested or Search wait here until they are saved.", a.x + 28, a.y + 90, 22, kInk2);
+        put(l, f.regular, "没有下载", a.x + 28, a.y + 46, 30, kInk);
+        put(l, f.regular, "从「推荐」或「搜索」得到的模型会先在这里等，直到保存。", a.x + 28, a.y + 90, 22, kInk2);
         return;
     }
     const int first = first_visible(dl_cursor_, rows);
@@ -1603,9 +1632,9 @@ void Dashboard::draw_downloads(gfx::DrawList & l, const Rect & a) const {
              d.state == DownloadState::done ? kInk2 : kInk);
         const bool fault = d.state == DownloadState::failed;
         put(l, f.regular, f.regular.font->fit(download_line(d), 20, a.w - 320), a.x + 28, y + 64, 20, fault ? kRed : kInk3);
-        const char * state = d.state == DownloadState::running ? "" : d.state == DownloadState::paused ? "Paused"
+        const char * state = d.state == DownloadState::running ? "" : d.state == DownloadState::paused ? "已暂停"
                            : d.state == DownloadState::failed ? "Failed" : d.state == DownloadState::done ? "Saved"
-                           : d.state == DownloadState::retrying ? "Retrying" : "Waiting";
+                           : d.state == DownloadState::retrying ? "Retrying" : "等待中";
         if (d.state == DownloadState::running && d.bytes) {
             const float share = (float) ((double) d.done / (double) d.bytes);
             meter(l, a.x + a.w - 248, y + 42, 220, share, kBlue);
@@ -1623,19 +1652,19 @@ void Dashboard::draw_api(gfx::DrawList & l) const {
     const bool loaded = !live_.model_label.empty();
     put(l, f.semibold, "API", kLeft, kTitleY, 44, kInk);
     const std::string base = live_.address.empty() ? std::string("http://<PS5 address>:8081") : "http://" + live_.address;
-    put(l, f.regular, "Base address", kLeft, 262, 24, kInk2);
+    put(l, f.regular, "基址", kLeft, 262, 24, kInk2);
     put(l, f.regular, base + "/v1", kLeft, 316, 44, kInk);
-    put(l, f.regular, "Any device on this network can call it, with any model name: the loaded one answers.", kLeft, 360, 22,
+    put(l, f.regular, "局域网内任何设备都能调用，模型名随意：由已加载的模型回答。", kLeft, 360, 22,
          kInk3);
 
     struct Ep { const char * method; const char * path; const char * about; bool decision; };
     const Ep all[] = {
-        { "POST", "/v1/chat/completions", "OpenAI chat, streaming and tools", false },
-        { "POST", "/v1/messages", "Anthropic Messages, for Claude Code and its SDKs", false },
-        { "POST", "/v1/completions", "Plain text completion", false },
-        { "POST", "/v1/systemone", "TypeSafe decisions: choice, score and yes-or-no questions", true },
-        { "GET", "/v1/models", "The loaded model", false },
-        { "GET", "/health", "Ready or loading", false },
+        { "POST", "/v1/chat/completions", "OpenAI 聊天、流式与工具", false },
+        { "POST", "/v1/messages", "Anthropic Messages，供 Claude Code 及其 SDK 使用", false },
+        { "POST", "/v1/completions", "纯文本补全", false },
+        { "POST", "/v1/systemone", "TypeSafe 决策：选择、打分与是非题", true },
+        { "GET", "/v1/models", "已加载的模型", false },
+        { "GET", "/health", "就绪或加载中", false },
     };
     float y = 452;
     for (const auto & e : all) {
@@ -1649,7 +1678,7 @@ void Dashboard::draw_api(gfx::DrawList & l) const {
     // An example for what is loaded, in a quiet panel.
     const Rect p{ 1000, 236, kRight - 1000, 688 };
     l.rounded_rect(p, 24, kSurface);
-    put(l, f.regular, "Try it", p.x + 48, p.y + 68, 24, kInk2);
+    put(l, f.regular, "试一试", p.x + 48, p.y + 68, 24, kInk2);
     std::vector<std::string> code;
     if (decision) {
         code = { "curl " + base + "/v1/systemone \\", "  -H 'Content-Type: application/json' \\", "  -d '{", "    \"state\": \"Refund me now or I cancel.\",",
@@ -1665,9 +1694,9 @@ void Dashboard::draw_api(gfx::DrawList & l) const {
         cy += 34;
     }
     l.line(p.x + 48, p.y + p.h - 150, p.x + p.w - 48, p.y + p.h - 150, 1.5f, kHair);
-    put(l, f.regular, decision ? "Ollaya and TypeSafe clients:" : "OpenAI SDKs:", p.x + 48, p.y + p.h - 100, 22, kInk2);
+    put(l, f.regular, decision ? "Ollaya 与 TypeSafe 客户端：" : "OpenAI SDK：", p.x + 48, p.y + p.h - 100, 22, kInk2);
     put(l, f.mono, decision ? "base_url=" + base : "base_url=" + base + "/v1", p.x + 48 + (decision ? 300 : 170), p.y + p.h - 100, 21, kInk);
-    put(l, f.regular, decision ? "" : "Claude Code:", p.x + 48, p.y + p.h - 56, 22, kInk2);
+    put(l, f.regular, decision ? "" : "Claude Code：", p.x + 48, p.y + p.h - 56, 22, kInk2);
     put(l, f.mono, decision ? "" : "ANTHROPIC_BASE_URL=" + base, p.x + 218, p.y + p.h - 56, 21, kInk);
 }
 
@@ -1677,8 +1706,8 @@ void Dashboard::draw_api(gfx::DrawList & l) const {
 // car shows its energy page: the line first, the numbers beside it.
 void Dashboard::draw_console(gfx::DrawList & l) const {
     const ui::Fonts & f = fonts_;
-    put(l, f.semibold, "Console", kLeft, kTitleY, 44, kInk);
-    const char * ranges[] = { "Last 2 minutes", "Last hour" };
+    put(l, f.semibold, "控制台", kLeft, kTitleY, 44, kInk);
+    const char * ranges[] = { "最近 2 分钟", "最近 1 小时" };
     float rx = 1224;
     for (int i = 1; i >= 0; --i) {
         const bool on = (i == 1) == console_hour_;
@@ -1699,8 +1728,8 @@ void Dashboard::draw_console(gfx::DrawList & l) const {
     };
     const bool hour = console_hour_;
     const Chart charts[] = {
-        { "Temperature", hour ? live_.temp_hour : live_.temp_history, "\xC2\xB0" "C", false, true },
-        { "Power", hour ? live_.power_hour : live_.power_history, " W", false, true },
+        { "温度", hour ? live_.temp_hour : live_.temp_history, "\xC2\xB0" "C", false, true },
+        { "功耗", hour ? live_.power_hour : live_.power_history, " W", false, true },
         { "GPU", hour ? live_.gpu_hour : live_.gpu_history, "%", true, false },
         { "CPU", hour ? live_.cpu_hour : live_.cpu_history, "%", true, false },
     };
@@ -1711,10 +1740,10 @@ void Dashboard::draw_console(gfx::DrawList & l) const {
         l.rounded_rect(r, 20, kSurface);
         put(l, f.regular, c.name, r.x + 32, r.y + 50, 22, kInk2);
         if (c.v.empty()) {
-            put(l, f.regular, hour ? "The first point comes after 30 seconds" : c.sensor ? "Not read" : kDash, r.x + 32,
+            put(l, f.regular, hour ? "30 秒后出现第一个点" : c.sensor ? "未读取" : kDash, r.x + 32,
                 r.y + r.h * 0.5f + 8, 22, kInk3);
             if (c.sensor && !hour) {
-                put(l, f.regular, "With elfldr running, the app loads ps5-exporter to read it", r.x + 32, r.y + r.h * 0.5f + 44,
+                put(l, f.regular, "elfldr 在跑时，app 会加载 ps5-exporter 来读取", r.x + 32, r.y + r.h * 0.5f + 44,
                     19, kInk3);
             }
             continue;
@@ -1738,14 +1767,14 @@ void Dashboard::draw_console(gfx::DrawList & l) const {
             put(l, f.regular, show(top - (top - bot) * 0.5f * (float) k), g.x - 14, gy + 6, 16, kInk3, gfx::Align::right);
         }
         plot(l, c.v, g, kInk.with_alpha(0.85f), bot, top);
-        put(l, f.regular, "Low " + show(lo) + "    Average " + show(sum / (float) c.v.size()) + "    High " + show(hi),
+        put(l, f.regular, "低 " + show(lo) + "    平均 " + show(sum / (float) c.v.size()) + "    高 " + show(hi),
             r.x + 32, r.y + r.h - 26, 19, kInk3);
     }
 
     // The readings now, as a table.
     const Rect p{ 1264, kListY, kRight - 1264, 926 - kListY };
     l.rounded_rect(p, 24, kSurface);
-    put(l, f.regular, "Now", p.x + 40, p.y + 52, 22, kInk2);
+    put(l, f.regular, "现在", p.x + 40, p.y + 52, 22, kInk2);
     const auto deg = [&](float t) { return t > -100 ? format("%.0f\xC2\xB0" "C", t) : std::string(kDash); };
     float soc_lo = 1000, soc_hi = -1000;
     for (const auto & [name, t] : live_.temps) {
@@ -1757,20 +1786,20 @@ void Dashboard::draw_console(gfx::DrawList & l) const {
     std::vector<std::pair<std::string, std::string>> rows = {
         { "SoC", deg(live_.soc_temp) },
         { "CPU", deg(live_.cpu_temp) },
-        { "SoC sensors", soc_hi > -100 ? format("%.0f", soc_lo) + " to " + deg(soc_hi) : std::string(kDash) },
-        { "Fan", live_.fan >= 0 ? format("%.0f%%", 100.0 * live_.fan) : std::string(kDash) },
+        { "SoC 传感器", soc_hi > -100 ? format("%.0f", soc_lo) + " to " + deg(soc_hi) : std::string(kDash) },
+        { "风扇", live_.fan >= 0 ? format("%.0f%%", 100.0 * live_.fan) : std::string(kDash) },
         { "", "" },
-        { "Power", live_.soc_power_w > 0 ? format("%.0f W", live_.soc_power_w) : std::string(kDash) },
-        { "Energy since start", format("%.1f Wh", live_.energy_wh) },
-        { "CPU clock", live_.cpu_ghz > 0 ? format("%.1f GHz", live_.cpu_ghz) : std::string(kDash) },
+        { "功耗", live_.soc_power_w > 0 ? format("%.0f W", live_.soc_power_w) : std::string(kDash) },
+        { "启动以来耗电", format("%.1f Wh", live_.energy_wh) },
+        { "CPU 频率", live_.cpu_ghz > 0 ? format("%.1f GHz", live_.cpu_ghz) : std::string(kDash) },
         { "", "" },
-        { "GPU busy", format("%.0f%%", 100.0 * live_.gpu_busy) },
-        { "CPU use", format("%.0f%%", 100.0 * live_.cpu_use) },
-        { "Memory", format("%.1f", live_.pool_gib - live_.free_gib) + " of " + gb(live_.pool_gib) },
+        { "GPU 占用中", format("%.0f%%", 100.0 * live_.gpu_busy) },
+        { "CPU 占用", format("%.0f%%", 100.0 * live_.cpu_use) },
+        { "内存", format("%.1f", live_.pool_gib - live_.free_gib) + " / " + gb(live_.pool_gib) },
         { "", "" },
     };
     for (const auto & d : live_.drives) {
-        rows.push_back({ d.name, d.total > 0 ? format("%.0f", d.free) + " of " + format("%.0f GB free", d.total) : std::string(kDash) });
+        rows.push_back({ d.name, d.total > 0 ? format("%.0f", d.free) + " / " + format("%.0f GB 可用", d.total) : std::string(kDash) });
     }
     float y = p.y + 104;
     for (const auto & [name, value] : rows) {
@@ -1789,7 +1818,7 @@ void Dashboard::draw_console(gfx::DrawList & l) const {
 
 void Dashboard::draw_settings(gfx::DrawList & l) const {
     const ui::Fonts & f = fonts_;
-    put(l, f.semibold, "Settings", kLeft, kTitleY, 44, kInk);
+    put(l, f.semibold, "设置", kLeft, kTitleY, 44, kInk);
     const bool rows = in_rows_ && setting_category_ != kDiagnostics;
     l.rounded_rect({ rows ? kListX : kLeft - 20, rows_y_.value, rows ? kRight - kListX : kRailW, rows ? kRowH : kRailH }, 14,
                    in_rows_ && setting_category_ == kDiagnostics ? kSurface : kRaised);
@@ -1866,7 +1895,7 @@ void Dashboard::draw_picker(gfx::DrawList & l) const {
 void Dashboard::draw_logs(gfx::DrawList & l, const Rect & a) const {
     const ui::Fonts & f = fonts_;
     float x = a.x + 28;
-    const char * tabs[] = { "App", "Server" };
+    const char * tabs[] = { "App", "服务器" };
     for (int i = 0; i < 2; ++i) {
         const bool on = (i == 1) == log_llama_;
         const float w = put(l, f.regular, tabs[i], x, a.y + 40, 24, on ? kInk : kInk3);
@@ -1875,7 +1904,7 @@ void Dashboard::draw_logs(gfx::DrawList & l, const Rect & a) const {
         }
         x += w + 36;
     }
-    put(l, f.regular, log_errors_ ? "Errors and warnings only" : "Every line", a.x + a.w - 28, a.y + 40, 20, kInk3,
+    put(l, f.regular, log_errors_ ? "仅错误和警告" : "全部", a.x + a.w - 28, a.y + 40, 20, kInk3,
          gfx::Align::right);
     const auto & v = log_view();
     const int last = (int) v.size() - log_scroll_;
@@ -1888,7 +1917,7 @@ void Dashboard::draw_logs(gfx::DrawList & l, const Rect & a) const {
         y += kLogLineH;
     }
     if (v.empty()) {
-        put(l, f.regular, "Nothing here yet", a.x + 28, a.y + 120, 24, kInk3);
+        put(l, f.regular, "这里还空着", a.x + 28, a.y + 120, 24, kInk3);
     }
 }
 
@@ -1918,16 +1947,16 @@ void Dashboard::draw_dialogs(gfx::DrawList & l) const {
     layout.text_size = 22;
     layout.cy = r.y + r.h - 56;
     if (market_confirm_) {
-        put(l, f.semibold, "Unload the model first?", r.x + 56, r.y + 86, 34, kInk);
-        put(l, f.regular, "The download is faster with the memory free. The model can load again after.", r.x + 56, r.y + 136, 22, kInk2);
-        const ui::Hint h[] = { { ui::Button::circle, "Cancel" }, { ui::Button::cross, "Keep it loaded" }, { ui::Button::triangle, "Unload and download" } };
+        put(l, f.semibold, "先卸载模型？", r.x + 56, r.y + 86, 34, kInk);
+        put(l, f.regular, "释放内存后下载更快，之后可以再加载模型。", r.x + 56, r.y + 136, 22, kInk2);
+        const ui::Hint h[] = { { ui::Button::circle, "取消" }, { ui::Button::cross, "保留在内存" }, { ui::Button::triangle, "卸载并下载" } };
         ui::draw_hints(l, fonts_, style, h, 3, r.x + r.w - 56, true, layout);
     } else {
-        put(l, f.semibold, "Not enough space there", r.x + 56, r.y + 86, 34, kInk);
-        put(l, f.regular, market_dir_.empty() ? "No drive has room for it. Free some space and try again."
-                                               : "It fits on " + drive_name(market_dir_) + ".",
+        put(l, f.semibold, "那里空间不够", r.x + 56, r.y + 86, 34, kInk);
+        put(l, f.regular, market_dir_.empty() ? "没有硬盘放得下。清点空间再试。"
+                                               : "可放入 " + drive_name(market_dir_) + ".",
              r.x + 56, r.y + 136, 22, kInk2);
-        const ui::Hint h[] = { { ui::Button::circle, "Cancel" }, { ui::Button::cross, "Save it there" } };
+        const ui::Hint h[] = { { ui::Button::circle, "取消" }, { ui::Button::cross, "保存到那里" } };
         ui::draw_hints(l, fonts_, style, h, market_dir_.empty() ? 1 : 2, r.x + r.w - 56, true, layout);
     }
 }

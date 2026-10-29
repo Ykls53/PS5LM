@@ -155,7 +155,7 @@ ModelInfo parse_model_info(Reader r, const std::string & path, uint64_t file_byt
     m.name      = m.file_name;
 
     if (!f && !r.mem) {
-        m.error = "cannot open";
+        m.error = "打不开";
         return m;
     }
     if (r.get<uint32_t>() != 0x46554747u) {  // "GGUF"
@@ -204,7 +204,7 @@ ModelInfo parse_model_info(Reader r, const std::string & path, uint64_t file_byt
         std::fclose(f);
     }
     if (r.bad) {
-        m.error = "metadata could not be read";
+        m.error = "读不到元数据";
         return m;
     }
 
@@ -241,7 +241,7 @@ ModelInfo parse_model_info(Reader r, const std::string & path, uint64_t file_byt
     }
     m.ok = m.n_layer > 0;
     if (!m.ok) {
-        m.error = "no layer count for architecture '" + m.arch + "'";
+        m.error = "架构缺少层数：'" + m.arch + "'";
     }
     return m;
 }
@@ -280,7 +280,7 @@ const std::vector<Preset> & presets() {
           { "--temp", "0.6", "--top-p", "0.95", "--top-k", "20", "--min-p", "0" } },
         { "qwen3.6", "Qwen 3.6", "MoE 35B-A3B or dense 27B; the MoE decodes fastest",
           { "--temp", "0.6", "--top-p", "0.95", "--top-k", "20", "--min-p", "0" } },
-        { "qwen3.5", "Qwen 3.5", "hybrid like 3.8; 9B at Q4_K_M leaves room for long context",
+        { "qwen3.5", "Qwen 3.5", "混合架构类似 3.8；9B 用 Q4_K_M 能留出长上下文空间",
           { "--temp", "0.6", "--top-p", "0.95", "--top-k", "20", "--min-p", "0" } },
         { "ornith", "Ornith 1.5", "Qwen 3.5 based 9B",
           { "--temp", "0.6", "--top-p", "0.95", "--top-k", "20", "--min-p", "0" } },
@@ -290,11 +290,11 @@ const std::vector<Preset> & presets() {
           { "--temp", "1.0", "--top-p", "1.0" }, 16384 },
         { "granite", "Granite 4.2", "3B and 8B, fast and plain",
           { "--temp", "0.0" } },
-        { "nemotron", "Nemotron 3 Nano", "hybrid Mamba, 1M context trained",
+        { "nemotron", "Nemotron 3 Nano", "混合 Mamba，按 100 万上下文训练",
           { "--temp", "0.6", "--top-p", "0.95" } },
         { "mistral", "Mistral", "7B v0.3 and the Small line",
           { "--temp", "0.15" } },
-        { "llama", "Llama 3", "8B fits at any 4-bit quant",
+        { "llama", "Llama 3", "8B 在任何 4bit 量化都放得下",
           { "--temp", "0.6", "--top-p", "0.9" } },
     };
     return table;
@@ -377,8 +377,8 @@ Plan plan_model(const ModelInfo & m, double budget_gib, uint32_t ctx_cap, const 
         p.why = why;
         return p;
     }
-    std::snprintf(why, sizeof(why), "%s%uk context, %s cache%s: %.1f of %.1f GiB",
-                  m.decision.empty() ? "" : ("decision model (" + m.decision + "), ").c_str(), p.ctx / 1024,
+    std::snprintf(why, sizeof(why), "%s%uk 上下文，%s 缓存%s：%.1f / %.1f GiB",
+                  m.decision.empty() ? "" : ("决策模型（" + m.decision + "), ").c_str(), p.ctx / 1024,
                   p.kv_type.c_str(), m.mmproj.empty() ? "" : ", images", p.total_gib, budget_gib);
     p.why = why;
 

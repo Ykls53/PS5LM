@@ -14,5 +14,11 @@ models/
 .DS_Store
 .wrangler/
 
+# 汉化时的原文备份（apply-translations.py 生成）
+*.en.bak
+
+# 中文字体源文件，按 README.zh-CN.md 自己下
+.deps/fonts/
+
 # the app's home screen backgrounds, made from ps5/app/sce_sys/source by scripts/build-app.sh
 ps5/app/sce_sys/*.dds

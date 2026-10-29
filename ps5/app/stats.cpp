@@ -65,7 +65,7 @@ void space(const char * path, double * free, double * total) {
 // not exported to titles, so the space comes from ps5-exporter, a payload.
 // /data is /user/data. Without the exporter the space is unknown (total 0).
 std::vector<Drive> drives_from_metrics(const std::string & text) {
-    std::vector<Drive> out = { { "Internal storage", "/data/PS5LM/models" } };
+    std::vector<Drive> out = { { "内置存储", "/data/PS5LM/models" } };
     const std::string key = "ps5_filesystem_size_bytes{mountpoint=\"";
     for (size_t at = text.find(key); at != std::string::npos; at = text.find(key, at + 1)) {
         const size_t from = at + key.size();
@@ -88,7 +88,7 @@ std::vector<Drive> drives_from_metrics(const std::string & text) {
 std::vector<Drive> mounted_drives() { return drives_from_metrics(http_get(9100, "/metrics", 2)); }
 
 std::string drive_name(const std::string & path) {
-    return path.rfind("/mnt/ext", 0) == 0 ? "M.2 drive" : path.rfind("/mnt/usb", 0) == 0 ? "USB drive" : "Internal storage";
+    return path.rfind("/mnt/ext", 0) == 0 ? "M.2 drive" : path.rfind("/mnt/usb", 0) == 0 ? "USB drive" : "内置存储";
 }
 
 namespace {
@@ -346,7 +346,7 @@ void StatsCollector::run() {
 
         const std::string m = http_get(port_, "/metrics");
         // Only real metrics: while the model loads the server already answers,
-        // with 503 "Loading model", and that is not ready.
+        // with 503 "加载模型", and that is not ready.
         const bool        up = m.find("llamacpp:") != std::string::npos;
         const double busy_s = metric(m, "prompt_seconds_total") + metric(m, "tokens_predicted_seconds_total");
         const double tokens = metric(m, "tokens_predicted_total");
@@ -410,7 +410,7 @@ void StatsCollector::run() {
             if (p.empty() && (long) (wall - start) % 60 == 1) {
                 const bool sent = send_payload("/app0/payloads/ps5-exporter.elf", 9021);
                 std::printf("ps5lm-app: ps5-exporter not running; %s\n",
-                            sent ? "sent the bundled copy to elfldr" : "no elfldr on 9021 to load it");
+                            sent ? "已把内置副本发给 elfldr" : "9021 上没有 elfldr，无法加载");
             }
             if (!p.empty()) {
                 from_exporter = true;

@@ -575,7 +575,7 @@ struct Models {
         pthread_attr_setstacksize(&attr, 16u << 20);  // the console's default stack is small
         pthread_create(&server, &attr, run_server, nullptr);
         server_started = true;
-        notify("PS5LM: loading the model onto the GPU");
+        notify("PS5LM：正在把模型加载到 GPU");
     }
 
     void stop() {
@@ -616,7 +616,10 @@ pthread_t start_thread(std::function<void()> & fn) {
 bool load_font(hui::gfx::Renderer & renderer, const char * name, hui::gfx::Font * font, hui::ui::FontRef * ref) {
     std::string data;
     const std::string path = std::string(kAssets) + "/fonts/" + name;
-    if (!hui::save::read_file(path, &data) || !font->load(data)) {
+    // 32 MiB, not save::read_file's 4 MiB default: the regular face carries the
+    // CJK glyphs the chat draws (GB2312, 6763 ideographs), so it is ~17 MiB and
+    // the default refuses it — which silently killed the whole dashboard.
+    if (!hui::save::read_file(path, &data, 32u << 20) || !font->load(data)) {
         std::printf("ps5lm-app: font %s failed\n", name);
         return false;
     }
@@ -640,7 +643,7 @@ int main(int, char **) {
     std::printf("ps5lm-app: version " PS5LM_VERSION "\n");
     std::printf("ps5lm-app: /data %s\n", data.c_str());
     if (data.rfind("closed", 0) == 0) {
-        notify("PS5LM cannot write to /data. On OnionHEN, add PPSA99575 to app_jailbreak.exact_title_ids "
+        notify("PS5LM 写不了 /data。OnionHEN 下把 PPSA99575 加进 app_jailbreak.exact_title_ids "
                "in /data/OnionHEN/config.ini and start PS5LM again.");
     }
     // One device-local heap over the whole pool (RADV splits an APU's 2/3 to
@@ -701,7 +704,7 @@ int main(int, char **) {
     };
     // The splash at once, so a restart for a model is never a black screen.
     if (ui_ok) {
-        dash.set_busy("Starting", "Opening the GPU and reading the models");
+        dash.set_busy("Starting", "正在打开 GPU 并读取模型");
         render();
         display.swap();
     }
@@ -726,7 +729,7 @@ int main(int, char **) {
             stats.set_model(pending);
             stats.set_state(ServerState::loading);
         }
-        stats.set_phase("Opening the GPU and reading the models");
+        stats.set_phase("正在打开 GPU 并读取模型");
     }
 
     // The slow part on a thread of its own (the GPU opening, every model's
@@ -801,7 +804,7 @@ int main(int, char **) {
         } else {
             stats.set_state(ServerState::no_model);
             if (models.rows.empty()) {
-                notify("PS5LM: no models; copy a .gguf to /data/PS5LM/models or PS5LM/models on a USB drive");
+                notify("PS5LM：没有模型。把 .gguf 复制到 /data/PS5LM/models，或 U 盘上的 PS5LM/models");
             }
         }
         stats.set_phase("");
@@ -877,17 +880,17 @@ int main(int, char **) {
             if (live.state == ServerState::loading && projector && restart_at == 0) {
                 std::ofstream(kChoice) << models.running << "\n";
                 std::ofstream(kTextOnly) << models.running << "\n";
-                notify("PS5LM: the image projector did not load; loading the model text only");
+                notify("PS5LM：图像投影器没加载，只加载文本部分");
                 dash.set_busy("Loading " + base_name(models.running) + " text only",
-                              "Its image projector did not load, see /data/PS5LM/llama.log");
+                              "它的图像投影器没加载，详见 /data/PS5LM/llama.log");
                 restart_at = n + 3;
             } else {
-                notify("PS5LM: the server stopped, see /data/PS5LM/llama.log");
+                notify("PS5LM：服务已停止，详见 /data/PS5LM/llama.log");
             }
         }
         const bool serving = live.state == ServerState::ready || live.state == ServerState::generating;
         if (serving && !was_serving) {
-            notify(live.decision.empty() ? "PS5LM: ready, chat in a browser on this network" : "PS5LM: ready for decisions at /v1/systemone");
+            notify(live.decision.empty() ? "PS5LM 就绪，局域网内用浏览器聊天" : "PS5LM 就绪，决策接口 /v1/systemone");
         }
         was_serving = serving;
         if (n % 30 == 0) {
@@ -946,7 +949,7 @@ int main(int, char **) {
             const bool over = gib > models.settings.scratch_limit_gib;
             if (over && !scratch_warned) {
                 char text[128];
-                std::snprintf(text, sizeof(text), "PS5LM: the chat's scratch folder holds %.1f GiB; clear it in Settings", gib);
+                std::snprintf(text, sizeof(text), "PS5LM：聊天 scratch 目录已占 %.1f GiB，在「设置」里清空", gib);
                 notify(text);
                 std::printf("ps5lm-app: %s\n", text + 7);
             }
@@ -969,9 +972,9 @@ int main(int, char **) {
         // A settings rescan in the background: say so until it lands.
         if (models.poll_rescan(stats) && models.scan_shown) {
             char text[96];
-            std::snprintf(text, sizeof(text), "Planning every model again for %uk tokens and the %s cache",
+            std::snprintf(text, sizeof(text), "按 %uk 上下文和 %s 缓存重新规划所有模型",
                           models.settings.ctx_cap / 1024, models.settings.kv_type.c_str());
-            dash.set_busy("Applying the new limits", text);
+            dash.set_busy("正在应用新的限制", text);
             rescanning = true;
         } else if (rescanning) {
             rescanning = false;
@@ -1042,7 +1045,7 @@ int main(int, char **) {
                     market.enqueue(job, free_gib(job.dir))) {
                     std::ofstream(kChoice) << "none\n";
                     std::printf("ps5lm-app: restarting to download %s/%s without a model\n", job.repo.c_str(), job.file.c_str());
-                    dash.set_busy("Unloading " + base_name(models.running), "The app restarts without it, then the download starts");
+                    dash.set_busy("正在卸载 " + base_name(models.running), "app 将不带它重启，然后开始下载");
                     restart_at = n + 3;
                 }
                 break;
@@ -1055,7 +1058,7 @@ int main(int, char **) {
                 std::filesystem::remove_all(e.path(), ec);
             }
             stats.set_scratch(folder_bytes(kScratch) / 1073741824.0);
-            notify("PS5LM: scratch folder cleared");
+            notify("PS5LM：scratch 目录已清空");
             std::printf("ps5lm-app: scratch folder cleared\n");
         }
         // The same requests from the PC (scripts/ps5lm-app.sh load|unload).
@@ -1073,7 +1076,7 @@ int main(int, char **) {
             }
         }
         if (req.kind == Dashboard::Request::unload || req.kind == Dashboard::Request::load) {
-            // Unloading in place leaves part of the model's GPU memory held
+            // 正在卸载 in place leaves part of the model's GPU memory held
             // (about 5 GiB of a 6.8 GiB model, measured), so a model change
             // restarts the app: the system replaces the process (LoadExec on
             // our own eboot.bin, "Kill for LoadExec" in the log) and the new
@@ -1085,11 +1088,11 @@ int main(int, char **) {
             std::printf("ps5lm-app: restarting for %s\n", req.kind == Dashboard::Request::load ? req.path.c_str() : "no model");
             const bool loaded = !models.running.empty();
             if (req.kind == Dashboard::Request::load) {
-                dash.set_busy(loaded ? "Switching models" : "Loading " + base_name(req.path),
-                              loaded ? "Unloading " + base_name(models.running) + ", then the app restarts with " + base_name(req.path)
-                                     : "The app restarts to give the model the whole memory");
+                dash.set_busy(loaded ? "切换模型" : "Loading " + base_name(req.path),
+                              loaded ? "正在卸载 " + base_name(models.running) + ", then the app restarts with " + base_name(req.path)
+                                     : "app 将重启，把整块内存让给模型");
             } else {
-                dash.set_busy("Unloading " + base_name(models.running), "The app restarts without a model, about 30 seconds");
+                dash.set_busy("正在卸载 " + base_name(models.running), "app 将不加载模型重启，约 30 秒");
             }
             restart_at = n + 3;  // three frames with the busy screen on the TV first
         }
